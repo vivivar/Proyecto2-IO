@@ -59,6 +59,15 @@ int selected_rb = 1; // 1 -> 0/1, 2 -> Bounded, 3 -> Unbounded
 static int **knapsack_table = NULL;
 static int currentObjects;
 static int currentCapacity;
+#define MAX_CAP 20
+#define MAX_OBJ 10
+
+typedef struct {
+    int peso;
+    int valor;
+    int cantidad; // -1 para manejar el infinito
+} Objeto;
+
 
 typedef struct {
     gchar  name[8];     
@@ -142,6 +151,59 @@ static void validate_entry (GtkEditable *editable, const gchar *text, gint lengt
 
     g_signal_stop_emission_by_name(editable, "insert-text");
     g_free(filtered);
+}
+
+// ---------ALGORITMO KNAPSACK ----------
+
+/* 0/1 Knapsack */
+int knapsack_01(int n, int W, Objeto objs[]) {
+    int dp[MAX_OBJ + 1][MAX_CAP + 1];
+    memset(dp, 0, sizeof(dp));
+
+    for (int i = 1; i <= n; i++) {
+        for (int w = 0; w <= W; w++) {
+            dp[i][w] = dp[i-1][w];
+            if (objs[i-1].peso <= w) {
+                int val = objs[i-1].valor + dp[i-1][w - objs[i-1].peso];
+                if (val > dp[i][w]) dp[i][w] = val;
+            }
+        }
+    }
+    return dp[n][W];
+}
+
+/* Bounded Knapsack */
+int knapsack_bounded(int n, int W, Objeto objs[]) {
+    int dp[MAX_CAP + 1];
+    memset(dp, 0, sizeof(dp));
+
+    for (int i = 0; i < n; i++) {
+        int maxUnits = objs[i].cantidad;
+        // Para cada objeto, procesamos de derecha a izquierda para no repetir
+        for (int w = W; w >= 0; w--) {
+            for (int k = 1; k <= maxUnits && k * objs[i].peso <= w; k++) {
+                int val = k * objs[i].valor + dp[w - k * objs[i].peso];
+                if (val > dp[w]) dp[w] = val;
+            }
+        }
+    }
+    return dp[W];
+}
+
+/* Unbounded Knapsack */
+int knapsack_unbounded(int n, int W, Objeto objs[]) {
+    int dp[MAX_CAP + 1];
+    memset(dp, 0, sizeof(dp));
+
+    for (int w = 0; w <= W; w++) {
+        for (int i = 0; i < n; i++) {
+            if (objs[i].peso <= w) {
+                int val = objs[i].valor + dp[w - objs[i].peso];
+                if (val > dp[w]) dp[w] = val;
+            }
+        }
+    }
+    return dp[W];
 }
 
 // --------- LATEX --------- 
