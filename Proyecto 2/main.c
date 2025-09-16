@@ -63,6 +63,12 @@ void* floyd(){
 	system("./floyd");
 }
 
+void* knapsack(){
+	char * command = "gcc knapsack.c $(pkg-config --cflags --libs gtk+-3.0) -lm -export-dynamic -o knapsack";
+	system(command);
+	system("./knapsack");
+}
+
 /*
 Funciones para Main Window
 */
@@ -76,7 +82,7 @@ void on_button1_clicked (GtkWidget *button1, gpointer data){
 }
 void on_button2_clicked (GtkButton *button2, gpointer data){
 	pthread_t thread;
-	pthread_create(&thread, NULL, pending, NULL);
+	pthread_create(&thread, NULL, knapsack, NULL);
 }
 void on_button3_clicked (GtkButton *button3, gpointer data){
 	pthread_t thread;
@@ -115,7 +121,7 @@ int main (int argc, char *argv[]){
 	image = GTK_WIDGET(gtk_builder_get_object(builder, "image"));
 
 	gtk_widget_set_tooltip_text(button1, "The Floyd-Warshall algorithm was created in 1962 by Robert Floyd, and it's an example of Dynammic Programming. It is a method to find the shortest paths between all pairs of nodes in a network.\nThe algorithm starts with a table called G(0) that shows the direct distances between each node. If two nodes are not directly connected, the table marks that distance as infinity. Then it checks if going through an extra node can make the path between two nodes shorter.\n The process is repeated until all possible intermediate nodes have been tested (meaning, there will be one G(k) table for each k node). In the end, the P table shows the shortest possible distance between every pair of nodes.\nWe could visualize these problems with distances between cities: What happens if I want to go directly from city A to city C? Would it be shorter if I go directly from A to C or if I go from A to B and from B to C?\nThe time complexity for the Floyd-Warshall algorithm is O(n³)");
-	gtk_widget_set_tooltip_text(button2, "To Be Assigned");
+	gtk_widget_set_tooltip_text(button2, "0/1 Knapsack Problem");
 	gtk_widget_set_tooltip_text(button3, "To Be Assigned");
 	gtk_widget_set_tooltip_text(button4, "To Be Assigned");
 
