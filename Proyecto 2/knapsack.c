@@ -64,12 +64,6 @@ static int currentCapacity;
 #define MAX_OBJ 10
 
 typedef struct {
-    int peso;
-    int valor;
-    int cantidad; // -1 para manejar el infinito
-} Objeto;
-
-typedef struct {
     gchar  name[8];     
     double cost;        
     double value;       
@@ -77,13 +71,12 @@ typedef struct {
     gboolean unbounded; 
 } KnapsackItem;
 
-
 void set_css(GtkCssProvider *cssProvider, GtkWidget *widget);
 gchar* object_name_setter(int index);
 void validate_entry(GtkEditable *editable, const gchar *text, gint length, gint *position, gpointer user_data);
-int knapsack_01(int n, int W, Objeto objs[]);
-int knapsack_bounded(int n, int W, Objeto objs[]);
-int knapsack_unbounded(int n, int W, Objeto objs[]);
+int knapsack_01(int n, int W, KnapsackItem objs[]);
+int knapsack_bounded(int n, int W, KnapsackItem objs[]);
+int knapsack_unbounded(int n, int W, KnapsackItem objs[]);
 void compile_latex_file(const gchar *tex_file);
 void on_select_latex_file(GtkWidget *widget, gpointer data);
 void build_table(int items);
@@ -181,15 +174,15 @@ gchar* trimdup(const gchar *s) {
 // ---------ALGORITMO KNAPSACK ----------
 
 /* 0/1 Knapsack */
-int knapsack_01(int n, int W, Objeto objs[]) {
+int knapsack_01(int n, int W, KnapsackItem objs[]) {
     int dp[MAX_OBJ + 1][MAX_CAP + 1];
     memset(dp, 0, sizeof(dp));
 
     for (int i = 1; i <= n; i++) {
         for (int w = 0; w <= W; w++) {
             dp[i][w] = dp[i-1][w];
-            if (objs[i-1].peso <= w) {
-                int val = objs[i-1].valor + dp[i-1][w - objs[i-1].peso];
+            if ((int)objs[i-1].cost <= w) {
+                int val = (int)objs[i-1].value + dp[i-1][w - (int)objs[i-1].cost];
                 if (val > dp[i][w]) dp[i][w] = val;
             }
         }
@@ -198,15 +191,15 @@ int knapsack_01(int n, int W, Objeto objs[]) {
 }
 
 /* Bounded Knapsack */
-int knapsack_bounded(int n, int W, Objeto objs[]) {
+int knapsack_bounded(int n, int W, KnapsackItem objs[]) {
     int dp[MAX_CAP + 1];
     memset(dp, 0, sizeof(dp));
 
     for (int i = 0; i < n; i++) {
-        int maxUnits = objs[i].cantidad;
+        int maxUnits = objs[i].unbounded ? INT_MAX : objs[i].quantity;
         for (int w = W; w >= 0; w--) {
-            for (int k = 1; k <= maxUnits && k * objs[i].peso <= w; k++) {
-                int val = k * objs[i].valor + dp[w - k * objs[i].peso];
+            for (int k = 1; k <= maxUnits && k * (int)objs[i].cost <= w; k++) {
+                int val = k * (int)objs[i].value + dp[w - k * (int)objs[i].cost];
                 if (val > dp[w]) dp[w] = val;
             }
         }
@@ -215,14 +208,14 @@ int knapsack_bounded(int n, int W, Objeto objs[]) {
 }
 
 /* Unbounded Knapsack */
-int knapsack_unbounded(int n, int W, Objeto objs[]) {
+int knapsack_unbounded(int n, int W, KnapsackItem objs[]) {
     int dp[MAX_CAP + 1];
     memset(dp, 0, sizeof(dp));
 
     for (int w = 0; w <= W; w++) {
         for (int i = 0; i < n; i++) {
-            if (objs[i].peso <= w) {
-                int val = objs[i].valor + dp[w - objs[i].peso];
+            if ((int)objs[i].cost <= w) {
+                int val = (int)objs[i].value + dp[w - (int)objs[i].cost];
                 if (val > dp[w]) dp[w] = val;
             }
         }
@@ -752,15 +745,6 @@ G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
         return;
     }
 
-    // Convertir a formato Objeto para el algoritmo
-    Objeto *objs = g_new(Objeto, n);
-    for (int i = 0; i < n; i++) {
-        KnapsackItem *it = &g_array_index(items, KnapsackItem, i);
-        objs[i].peso = (int)it->cost;
-        objs[i].valor = (int)it->value;
-        objs[i].cantidad = it->unbounded ? -1 : it->quantity;
-    }
-
     // Crear tabla de programación dinámica
     int **dp = g_new(int *, n + 1);
     for (int i = 0; i <= n; i++) {
@@ -768,16 +752,23 @@ G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
         for (int w = 0; w <= capacity; w++) {
             if (i == 0 || w == 0) {
                 dp[i][w] = 0;
-            } else if (objs[i-1].peso <= w) {
-                dp[i][w] = (objs[i-1].valor + dp[i-1][w - objs[i-1].peso] > dp[i-1][w]) ?
-                           objs[i-1].valor + dp[i-1][w - objs[i-1].peso] : dp[i-1][w];
+            } else if ((int)g_array_index(items, KnapsackItem, i-1).cost <= w) {
+                KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
+                int without = dp[i-1][w];
+                int with = (int)it->value + dp[i-1][w - (int)it->cost];
+                dp[i][w] = (with > without) ? with : without;
             } else {
                 dp[i][w] = dp[i-1][w];
             }
         }
     }
 
-    int max_value = dp[n][capacity];
+    int max_value = 0;
+    switch(selected_rb) {
+        case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data); break;
+        case 2: max_value = knapsack_bounded(n, capacity, (KnapsackItem *)items->data); break;
+        case 3: max_value = knapsack_unbounded(n, capacity, (KnapsackItem *)items->data); break;
+    }
 
     generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
     
@@ -786,7 +777,6 @@ G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
         g_free(dp[i]);
     }
     g_free(dp);
-    g_free(objs);
     g_array_free(items, TRUE);
 }
 
