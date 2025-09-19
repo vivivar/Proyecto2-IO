@@ -1308,6 +1308,7 @@ void on_loadToGrid_clicked (GtkWidget *loadToGrid, gpointer data){
         g_free(basename);
     }
 }
+
 //Función de acción para el botón de 'Exit' que cierra todo el programa.
 void on_exitButton_clicked (GtkButton *exitButton1, gpointer data){
     gtk_main_quit();

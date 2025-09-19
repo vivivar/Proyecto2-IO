@@ -60,8 +60,9 @@ int selected_rb = 1; // 1 -> 0/1, 2 -> Bounded, 3 -> Unbounded
 static int **knapsack_table = NULL;
 static int currentObjects;
 static int currentCapacity;
+static const char *CSV_DELIMS = ",;\t\r\n";
 #define MAX_CAP 20
-#define MAX_OBJ 10
+#define MAX_OBJ 100
 
 typedef struct {
     gchar  name[8];     
@@ -145,22 +146,38 @@ void validate_entry(GtkEditable *editable, const gchar *text, gint length, gint 
     g_free(filtered);
 }
 
-gboolean has_infinity(const gchar *s) {
-    if (!s) return FALSE;
+gboolean is_infinite(const gchar *s) {
+    if (!s) {
+        return FALSE;
+    }
     return (g_utf8_strchr(s, -1, 0x221E) != NULL) || (strstr(s, "inf") != NULL);
 }
 
-gchar* normalize_decimal(const gchar *s) {
-    if (!s) return g_strdup("");
+gchar* set_real(const gchar *s) {
+    if (!s) {
+        return g_strdup("");
+    }
+
     gchar *dup = g_strdup(s);
-    for (char *p = dup; *p; ++p) if (*p == ',') *p = '.';
+
+    for (char *p = dup; *p; ++p) {
+        if (*p == ',') {
+            *p = '.';
+        }
+    }
     return dup;
 }
 
 gchar* trimdup(const gchar *s) {
-    if (!s) return g_strdup("");
+    if (!s) {
+        return g_strdup("");
+    }
+
     const gchar *start = s;
-    while (g_unichar_isspace(g_utf8_get_char(start))) start = g_utf8_next_char(start);
+    while (g_unichar_isspace(g_utf8_get_char(start))) {
+        start = g_utf8_next_char(start);
+    }
+
     const gchar *end = s + strlen(s);
     while (end > start) {
         const gchar *prev = g_utf8_find_prev_char(start, end);
@@ -169,6 +186,63 @@ gchar* trimdup(const gchar *s) {
         end = prev;
     }
     return g_strndup(start, end - start);
+}
+
+static const char *text_to_type(int type) {
+    if (type == 1) {
+        return "01";
+    } else if (type == 2) {
+        return "BOUNDED";
+    } else {
+        return "UNBOUNDED";
+    }
+}
+
+static int set_type(const char *type) {
+    if (!type) {
+        return 1;
+    }
+
+    if (g_ascii_strcasecmp(type, "01") == 0) {
+        return 1;
+    }
+
+    if (g_ascii_strcasecmp(type, "BOUNDED") == 0) {
+        return 2;
+    }
+
+    if (g_ascii_strcasecmp(type, "UNBOUNDED") == 0) {
+        return 3;
+    }
+    return 1;
+}
+
+static gchar *set_extension(const gchar *name) {
+    if (!name || !*name) {
+        //Nombre default de archivo
+        return g_strdup("knapsack.csv");
+    }
+
+    if (g_str_has_suffix(name, ".csv")) {
+        return g_strdup(name);
+    }
+    return g_strconcat(name, ".csv", NULL);
+}
+
+static void rstrip_crlf_inline(char *s) {
+    if (!s) {
+        return;
+    }
+    size_t L = strlen(s);
+    while (L && (s[L-1] == '\r' || s[L-1] == '\n')) {
+        s[--L] = '\0';
+    }
+}
+
+static void set_path(const char *dirname) {
+    if (!g_file_test(dirname, G_FILE_TEST_IS_DIR)) {
+        g_mkdir_with_parents(dirname, 0755);
+    }
 }
 
 // ---------ALGORITMO KNAPSACK ----------
@@ -389,6 +463,7 @@ void build_table(int items) {
         gtk_widget_set_halign(lbl, GTK_ALIGN_START);
         gtk_grid_attach(GTK_GRID(grid), lbl, 0, i + 1, 1, 1);
 
+        //Columna de costo
         GtkWidget *cost_cell = gtk_entry_new();
         gtk_entry_set_width_chars(GTK_ENTRY(cost_cell), 8);
         gtk_entry_set_alignment(GTK_ENTRY(cost_cell), 1.0);
@@ -397,6 +472,7 @@ void build_table(int items) {
         g_ptr_array_add(entry_costs, cost_cell);
         g_signal_connect(cost_cell, "insert-text", G_CALLBACK(validate_entry), NULL);
 
+        //Columna de valor
         GtkWidget *value_cell = gtk_entry_new();
         gtk_entry_set_width_chars(GTK_ENTRY(value_cell), 8);
         gtk_entry_set_alignment(GTK_ENTRY(value_cell), 1.0);
@@ -405,6 +481,7 @@ void build_table(int items) {
         g_ptr_array_add(entry_values, value_cell);
         g_signal_connect(value_cell, "insert-text", G_CALLBACK(validate_entry), NULL);
 
+        //Columna de cantidad
         GtkWidget *quantity_cell = gtk_entry_new();
         gtk_entry_set_width_chars(GTK_ENTRY(quantity_cell), 6);
         gtk_entry_set_alignment(GTK_ENTRY(quantity_cell), 1.0);
@@ -412,12 +489,14 @@ void build_table(int items) {
         if (selected_rb == 1) {
             gtk_entry_set_text(GTK_ENTRY(quantity_cell), "1");
             gtk_editable_set_editable(GTK_EDITABLE(quantity_cell), FALSE);
+            gtk_widget_set_sensitive(quantity_cell, FALSE);
         } else if (selected_rb == 2) {
             gtk_entry_set_text(GTK_ENTRY(quantity_cell), "1");
             g_signal_connect(quantity_cell, "insert-text", G_CALLBACK(validate_entry), NULL);
         } else if (selected_rb == 3) {
             gtk_entry_set_text(GTK_ENTRY(quantity_cell), "∞");
             gtk_editable_set_editable(GTK_EDITABLE(quantity_cell), FALSE);
+            gtk_widget_set_sensitive(quantity_cell, FALSE);
         }
 
         gtk_grid_attach(GTK_GRID(grid), quantity_cell, 3, i + 1, 1, 1);
@@ -430,8 +509,12 @@ void build_table(int items) {
 }
 
 GArray* read_knapsack_items(int n_items) {
-    if (!entry_costs || !entry_values || !entry_quantity) return NULL;
-    if (n_items <= 0) return NULL;
+    if (!entry_costs || !entry_values || !entry_quantity) {
+        return NULL;
+    }
+    if (n_items <= 0) {
+        return NULL;
+    }
 
     GArray *items = g_array_new(FALSE, FALSE, sizeof(KnapsackItem));
 
@@ -441,32 +524,32 @@ GArray* read_knapsack_items(int n_items) {
         obj.unbounded = FALSE;
         obj.quantity = 0;
 
-        gchar *nm = object_name_setter(i + 1);
-        g_strlcpy(obj.name, nm, sizeof(obj.name));
+        gchar *name = object_name_setter(i + 1);
+        g_strlcpy(obj.name, name, sizeof(obj.name));
 
-        const gchar *tc_raw = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_costs, i)));
-        gchar *tc_norm = normalize_decimal(tc_raw);
-        obj.cost = g_ascii_strtod(tc_norm, NULL);
+        const gchar *cost_col_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_costs, i)));
+        gchar *cost_col_real = set_real(cost_col_entry);
+        obj.cost = g_ascii_strtod(cost_col_real, NULL);
         if (obj.cost < 0) obj.cost = 0;
-        g_free(tc_norm);
+        g_free(cost_col_real);
 
-        const gchar *tv_raw = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_values, i)));
-        gchar *tv_norm = normalize_decimal(tv_raw);
-        obj.value = g_ascii_strtod(tv_norm, NULL);
+        const gchar *val_col_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_values, i)));
+        gchar *val_col_real = set_real(val_col_entry);
+        obj.value = g_ascii_strtod(val_col_real, NULL);
         if (obj.value < 0) obj.value = 0;
-        g_free(tv_norm);
+        g_free(val_col_real);
 
-        const gchar *tq_raw = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_quantity, i)));
-        gchar *tq = trimdup(tq_raw);
+        const gchar *qty_col_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_quantity, i)));
+        gchar *qty_col = trimdup(qty_col_entry);
 
-        if (has_infinity(tq)) {
+        if (is_infinite(qty_col)) {
             obj.unbounded = TRUE;
             obj.quantity = -1;
         } else {
-            obj.quantity = (int)g_ascii_strtod(tq, NULL);
+            obj.quantity = (int)g_ascii_strtod(qty_col, NULL);
             if (obj.quantity < 0) obj.quantity = 0;
         }
-        g_free(tq);
+        g_free(qty_col);
 
         g_array_append_val(items, obj);
     }
@@ -655,6 +738,152 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     g_free(filename);
 }
 
+// --------- File Management --------- 
+
+gboolean table_to_csv(const char *filepath) {
+    if (!entry_costs || !entry_values || !entry_quantity) return FALSE;
+    int n_items = (int)entry_costs->len;
+    if (n_items <= 0) return FALSE;
+
+    GString *out = g_string_new(NULL);
+    int cap = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(maxCapacity));
+
+    g_string_append_printf(out, "#TYPE,%s\n", text_to_type(selected_rb));
+    g_string_append_printf(out, "#CAPACITY,%d\n", cap);
+    g_string_append_printf(out, "#OBJECTS,%d\n", n_items);
+    g_string_append(out, "Object,Cost,Value,Quantity\n");
+
+    for (int i = 0; i < n_items; i++) {
+        gchar *name = object_name_setter(i + 1);
+        const gchar *cost_col = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_costs,  i)));
+        const gchar *value_col = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_values, i)));
+        const gchar *qty_col = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_quantity, i)));
+
+        if (!cost_col) {
+            cost_col = "0";
+        }
+        if (!value_col) {
+            value_col = "0";
+        }
+        if (!qty_col || !*qty_col) {
+            qty_col = (selected_rb == 3 ? "∞" : "1");
+        }
+        g_string_append_printf(out, "%s,%s,%s,%s\n", name, cost_col, value_col, qty_col);
+    }
+
+    gboolean ok = g_file_set_contents(filepath, out->str, out->len, NULL);
+    g_string_free(out, TRUE);
+    return ok;
+}
+
+void file_selected(const char *filename) {
+    FILE *f = fopen(filename, "r");
+    if (!f) return;
+
+    const char *DELIMS = ",;\t\r\n";
+    char line[4096];
+
+    int type = selected_rb;
+    int cap  = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(maxCapacity));
+    int n    = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(objects));
+
+    long pos = ftell(f);
+    for (int k = 0; k < 3; k++) {
+        if (!fgets(line, sizeof(line), f)) break;
+        gchar *trim = trimdup(line);
+        if      (g_str_has_prefix(trim, "#TYPE,"))     { type = set_type(trim + 6); }
+        else if (g_str_has_prefix(trim, "#CAPACITY,")) { cap  = (int)g_ascii_strtod(trim + 10, NULL); if (cap < 0) cap = 0; }
+        else if (g_str_has_prefix(trim, "#OBJECTS,"))  { n    = (int)g_ascii_strtod(trim + 9,  NULL); if (n   < 1) n   = 1; }
+        else { fseek(f, pos, SEEK_SET); g_free(trim); goto header_check; }
+        pos = ftell(f);
+        g_free(trim);
+    }
+
+    header_check:
+    long pos2 = ftell(f);
+    if (fgets(line, sizeof(line), f)) {
+        gchar *t = trimdup(line);
+        if (!g_str_has_prefix(t, "Object")) fseek(f, pos2, SEEK_SET);
+        g_free(t);
+    }
+
+    selected_rb = type;
+    if      (type == 1) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(rb_01), TRUE);
+    else if (type == 2) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(rb_bounded), TRUE);
+    else                gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(rb_unbounded), TRUE);
+
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(maxCapacity), cap);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(objects),     n);
+
+    build_table(n);
+
+
+    if (!entry_costs || !entry_values || !entry_quantity) { 
+        fclose(f); return; 
+    }
+
+    int len_costs = (int)entry_costs->len;
+    int len_vals  = (int)entry_values->len;
+    int len_qty   = (int)entry_quantity->len;
+
+    if (!((len_costs == n && len_vals == n && len_qty == n) || (len_costs == n+1 && len_vals == n+1 && len_qty == n+1))) {
+        fclose(f);
+        return;
+    }
+    int base = 0;
+    if (len_costs == n+1){
+        base = 1;
+    } 
+
+    int row = 0; 
+    while (row < n && fgets(line, sizeof(line), f)) {
+        gchar *ln = trimdup(line);
+        if (!*ln) { g_free(ln); continue; }
+
+        char *saveptr = NULL;
+        (void) strtok_r(ln, DELIMS, &saveptr);                
+        char *t_cost = strtok_r(NULL, DELIMS, &saveptr);
+        char *t_val  = strtok_r(NULL, DELIMS, &saveptr);
+        char *t_qty  = strtok_r(NULL, DELIMS, &saveptr);
+
+        gchar *ncost = set_real(t_cost ? t_cost : "0");
+        gchar *nval  = set_real(t_val  ? t_val  : "0");
+
+        int idx = base + row;  
+
+        GtkWidget *w_cost = g_ptr_array_index(entry_costs,  idx);
+        GtkWidget *w_val  = g_ptr_array_index(entry_values, idx);
+        GtkWidget *w_qty  = g_ptr_array_index(entry_quantity, idx);
+        if (!w_cost || !w_val || !w_qty) { g_free(ncost); g_free(nval); g_free(ln); break; }
+
+        gtk_entry_set_text(GTK_ENTRY(w_cost), ncost);
+        gtk_entry_set_text(GTK_ENTRY(w_val),  nval);
+
+        if (type == 3) {           
+            gtk_entry_set_text(GTK_ENTRY(w_qty), "∞");
+            gtk_editable_set_editable(GTK_EDITABLE(w_qty), FALSE);
+            gtk_widget_set_sensitive(w_qty, FALSE);
+        } else if (type == 1) {        
+            gtk_entry_set_text(GTK_ENTRY(w_qty), "1");
+            gtk_editable_set_editable(GTK_EDITABLE(w_qty), FALSE);
+            gtk_widget_set_sensitive(w_qty, FALSE);
+        } else {                       
+            const char *qty_show = (t_qty && *t_qty) ? t_qty : "1";
+            if (is_infinite(qty_show)) qty_show = "1";
+            gtk_entry_set_text(GTK_ENTRY(w_qty), qty_show);
+            gtk_editable_set_editable(GTK_EDITABLE(w_qty), TRUE);
+            gtk_widget_set_sensitive(w_qty, TRUE);
+        }
+
+        g_free(ncost);
+        g_free(nval);
+        g_free(ln);
+        row++;
+    }
+
+    fclose(f);
+}
+
 // --------- BOTONES --------- 
 
 G_MODULE_EXPORT void on_objects_value_changed(GtkSpinButton *objects, gpointer user_data) {
@@ -731,48 +960,61 @@ G_MODULE_EXPORT void on_editLatexButton_clicked(GtkWidget *editLatex, gpointer d
 
 G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
     int capacity = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(maxCapacity));
-    int n = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(objects));
-    
+    int n        = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(objects));
+
     GArray *items = read_knapsack_items(n);
     if (!items) {
         GtkWidget *dialog = gtk_message_dialog_new(GTK_WINDOW(window1),
-            GTK_DIALOG_MODAL,
-            GTK_MESSAGE_ERROR,
-            GTK_BUTTONS_OK,
+            GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
             "Error: No se pudieron leer los items");
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
         return;
     }
 
-    // Crear tabla de programación dinámica
-    int **dp = g_new(int *, n + 1);
+    int **dp = g_new(int*, n + 1);
     for (int i = 0; i <= n; i++) {
         dp[i] = g_new(int, capacity + 1);
         for (int w = 0; w <= capacity; w++) {
             if (i == 0 || w == 0) {
                 dp[i][w] = 0;
-            } else if ((int)g_array_index(items, KnapsackItem, i-1).cost <= w) {
-                KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
-                int without = dp[i-1][w];
-                int with = (int)it->value + dp[i-1][w - (int)it->cost];
-                dp[i][w] = (with > without) ? with : without;
             } else {
-                dp[i][w] = dp[i-1][w];
+                KnapsackItem *it = &g_array_index(items, KnapsackItem, i - 1);
+                int wt = (int)it->cost;     // asumiendo costo = "peso"
+                int val = (int)it->value;   // valor entero para DP simple
+                if (wt <= w) {
+                    int without = dp[i-1][w];
+                    int with    = val + dp[i-1][w - wt];
+                    dp[i][w] = (with > without) ? with : without;
+                } else {
+                    dp[i][w] = dp[i-1][w];
+                }
             }
         }
     }
 
     int max_value = 0;
-    switch(selected_rb) {
-        case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data); break;
-        case 2: max_value = knapsack_bounded(n, capacity, (KnapsackItem *)items->data); break;
+    switch (selected_rb) {
+        case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data);       break;
+        case 2: max_value = knapsack_bounded(n, capacity, (KnapsackItem *)items->data);   break;
         case 3: max_value = knapsack_unbounded(n, capacity, (KnapsackItem *)items->data); break;
     }
 
+    {
+        set_path("Saved_Knapsack");
+        const gchar *raw  = gtk_entry_get_text(GTK_ENTRY(fileName)); 
+        gchar *fname      = (raw && *raw) ? set_extension(raw) : g_strdup_printf("knapsack_%ld.csv", (long)time(NULL));
+        gchar *path       = g_build_filename("Saved_Knapsack", fname, NULL);
+
+        if (!table_to_csv(path)) {
+            g_printerr("No se pudo guardar CSV en %s\n", path);
+        } 
+        g_free(fname);
+        g_free(path);
+    }
+
     generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
-    
-    // Liberar memoria
+
     for (int i = 0; i <= n; i++) {
         g_free(dp[i]);
     }
@@ -780,14 +1022,57 @@ G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
     g_array_free(items, TRUE);
 }
 
-G_MODULE_EXPORT void on_loadToGrid_clicked(GtkWidget *loadToGrid, gpointer data) {
-    // FALTAAAAA
+G_MODULE_EXPORT void on_loadToGrid_clicked(GtkWidget *loadToGridBtn, gpointer data) {
+    char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(fileLoad));
+    if (!filename) {
+        return;
+    }
+
+    file_selected(filename);
+
+    // Mostrar el nombre base (sin path) en el entry fileName
+    gchar *basename = g_path_get_basename(filename);
+    gtk_entry_set_text(GTK_ENTRY(fileName), basename);
+    g_free(basename);
+
+    g_free(filename);
 }
+
 
 G_MODULE_EXPORT void on_saveProblem_clicked(GtkWidget *saveProblem, gpointer data) {
-    // FALTAAA
-}
+    set_path("Saved_Knapsack");
 
+    GtkWidget *dlg = gtk_file_chooser_dialog_new(
+        "Guardar CSV", GTK_WINDOW(window1),
+        GTK_FILE_CHOOSER_ACTION_SAVE,
+        "Cancelar", GTK_RESPONSE_CANCEL,
+        "Guardar",  GTK_RESPONSE_ACCEPT,
+        NULL
+    );
+
+    gchar *default_folder = g_build_filename(g_get_current_dir(), "Saved_Knapsack", NULL);
+    gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dlg), default_folder);
+    g_free(default_folder);
+
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dlg), "knapsack.csv");
+
+    GtkFileFilter *ff = gtk_file_filter_new();
+    gtk_file_filter_set_name(ff, "CSV (*.csv)");
+    gtk_file_filter_add_pattern(ff, "*.csv");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dlg), ff);
+
+    if (gtk_dialog_run(GTK_DIALOG(dlg)) == GTK_RESPONSE_ACCEPT) {
+        char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dlg));
+        if (filename && table_to_csv(filename)) {
+            
+        } else {
+            //g_printerr("Error al guardar CSV\n");
+        }
+        g_free(filename);
+    }
+
+    gtk_widget_destroy(dlg);
+}
 //Main
 int main (int argc, char *argv[]){
     gtk_init(&argc, &argv);

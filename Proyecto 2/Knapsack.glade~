@@ -14,7 +14,7 @@
   </object>
   <object class="GtkAdjustment" id="objectsAdjustment">
     <property name="lower">1</property>
-    <property name="upper">10</property>
+    <property name="upper">20</property>
     <property name="step-increment">1</property>
     <property name="page-increment">10</property>
   </object>
@@ -47,15 +47,21 @@
         </child>
         <child>
           <object class="GtkLabel" id="label1">
-            <property name="width-request">485</property>
-            <property name="height-request">80</property>
+            <property name="width-request">524</property>
+            <property name="height-request">113</property>
             <property name="visible">True</property>
             <property name="can-focus">False</property>
-            <property name="label" translatable="yes">Add description &amp; instructions</property>
+            <property name="label" translatable="yes">Let's test it out!
+1. Select the knapsack type (hover over the radio buttons and select accordingly).
+2. Select the knapsack's capacity and object quantity desired.
+3. Complete the table as desired.
+4. Click on 'Generate solution'.</property>
+            <property name="justify">center</property>
+            <property name="wrap">True</property>
           </object>
           <packing>
-            <property name="x">33</property>
-            <property name="y">71</property>
+            <property name="x">10</property>
+            <property name="y">75</property>
           </packing>
         </child>
         <child>
@@ -67,28 +73,28 @@
             <property name="adjustment">capacityAdjustment</property>
           </object>
           <packing>
-            <property name="x">79</property>
-            <property name="y">218</property>
+            <property name="x">124</property>
+            <property name="y">268</property>
           </packing>
         </child>
         <child>
           <object class="GtkSpinButton" id="objects">
             <property name="width-request">118</property>
-            <property name="height-request">34</property>
+            <property name="height-request">37</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <property name="adjustment">objectsAdjustment</property>
             <signal name="value-changed" handler="on_objects_value_changed" swapped="no"/>
           </object>
           <packing>
-            <property name="x">323</property>
-            <property name="y">219</property>
+            <property name="x">307</property>
+            <property name="y">268</property>
           </packing>
         </child>
         <child>
           <object class="GtkScrolledWindow" id="scrollWindow">
-            <property name="width-request">329</property>
-            <property name="height-request">298</property>
+            <property name="width-request">307</property>
+            <property name="height-request">331</property>
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <property name="shadow-type">in</property>
@@ -97,8 +103,8 @@
             </child>
           </object>
           <packing>
-            <property name="x">99</property>
-            <property name="y">292</property>
+            <property name="x">121</property>
+            <property name="y">321</property>
           </packing>
         </child>
         <child>
@@ -109,13 +115,14 @@
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <property name="receives-default">False</property>
+            <property name="tooltip-text" translatable="yes">Tooltip test :)</property>
             <property name="active">True</property>
             <property name="draw-indicator">True</property>
             <signal name="toggled" handler="on_rb_01_toggled" swapped="no"/>
           </object>
           <packing>
             <property name="x">47</property>
-            <property name="y">152</property>
+            <property name="y">205</property>
           </packing>
         </child>
         <child>
@@ -133,7 +140,7 @@
           </object>
           <packing>
             <property name="x">216</property>
-            <property name="y">152</property>
+            <property name="y">205</property>
           </packing>
         </child>
         <child>
@@ -150,8 +157,8 @@
             <signal name="toggled" handler="on_rb_unbounded_toggled" swapped="no"/>
           </object>
           <packing>
-            <property name="x">379</property>
-            <property name="y">152</property>
+            <property name="x">369</property>
+            <property name="y">205</property>
           </packing>
         </child>
         <child>
@@ -207,7 +214,7 @@
           </object>
           <packing>
             <property name="x">269</property>
-            <property name="y">669</property>
+            <property name="y">702</property>
           </packing>
         </child>
         <child>
@@ -219,7 +226,7 @@
           </object>
           <packing>
             <property name="x">11</property>
-            <property name="y">669</property>
+            <property name="y">702</property>
           </packing>
         </child>
         <child>
@@ -232,7 +239,7 @@
           </object>
           <packing>
             <property name="x">11</property>
-            <property name="y">644</property>
+            <property name="y">675</property>
           </packing>
         </child>
         <child>
@@ -245,8 +252,8 @@
             <property name="receives-default">True</property>
           </object>
           <packing>
-            <property name="x">435</property>
-            <property name="y">669</property>
+            <property name="x">433</property>
+            <property name="y">702</property>
           </packing>
         </child>
         <child>
@@ -286,21 +293,21 @@
             <property name="label" translatable="yes">Knapsack Capacity</property>
           </object>
           <packing>
-            <property name="x">76</property>
-            <property name="y">194</property>
+            <property name="x">122</property>
+            <property name="y">246</property>
           </packing>
         </child>
         <child>
           <object class="GtkLabel" id="objectsLabel">
             <property name="width-request">123</property>
-            <property name="height-request">18</property>
+            <property name="height-request">20</property>
             <property name="visible">True</property>
             <property name="can-focus">False</property>
             <property name="label" translatable="yes">Objects</property>
           </object>
           <packing>
-            <property name="x">321</property>
-            <property name="y">194</property>
+            <property name="x">307</property>
+            <property name="y">246</property>
           </packing>
         </child>
       </object>
