@@ -81,8 +81,6 @@ void set_css(GtkCssProvider *cssProvider, GtkWidget *widget);
 gchar* object_name_setter(int index);
 void validate_entry(GtkEditable *editable, const gchar *text, gint length, gint *position, gpointer user_data);
 int knapsack_01(int n, int W, KnapsackItem objs[]);
-int knapsack_bounded(int n, int W, KnapsackItem objs[]);
-int knapsack_unbounded(int n, int W, KnapsackItem objs[]);
 void compile_latex_file(const gchar *tex_file);
 void on_select_latex_file(GtkWidget *widget, gpointer data);
 void build_table(int items);
@@ -197,22 +195,6 @@ int knapsack_01(int n, int W, KnapsackItem objs[]) {
 }
 
 /* Bounded Knapsack */
-int knapsack_bounded(int n, int W, KnapsackItem objs[]) {
-    int dp[MAX_CAP + 1];
-    memset(dp, 0, sizeof(dp));
-
-    for (int i = 0; i < n; i++) {
-        int maxUnits = objs[i].unbounded ? INT_MAX : objs[i].quantity;
-        for (int w = W; w >= 0; w--) {
-            for (int k = 1; k <= maxUnits && k * (int)objs[i].cost <= w; k++) {
-                int val = k * (int)objs[i].value + dp[w - k * (int)objs[i].cost];
-                if (val > dp[w]) dp[w] = val;
-            }
-        }
-    }
-    return dp[W];
-}
-
 int knapsack_bounded_detailed(int n, int W, KnapsackItem objs[], BoundedCell ***table_ptr) {
     BoundedCell **table = g_new(BoundedCell *, n);
     for (int i = 0; i < n; i++) {
@@ -254,22 +236,6 @@ int knapsack_bounded_detailed(int n, int W, KnapsackItem objs[], BoundedCell ***
     return table[n-1][W].value;
 }
 
-/* Unbounded Knapsack */
-int knapsack_unbounded(int n, int W, KnapsackItem objs[]) {
-    int dp[MAX_CAP + 1];
-    memset(dp, 0, sizeof(dp));
-
-    for (int w = 0; w <= W; w++) {
-        for (int i = 0; i < n; i++) {
-            if ((int)objs[i].cost <= w) {
-                int val = (int)objs[i].value + dp[w - (int)objs[i].cost];
-                if (val > dp[w]) dp[w] = val;
-            }
-        }
-    }
-    return dp[W];
-}
-
 // --------- LATEX --------- 
 
 void compile_latex_file(const gchar *tex_file) {
@@ -290,7 +256,7 @@ void compile_latex_file(const gchar *tex_file) {
         }
         
         if (g_file_test(pdf_file, G_FILE_TEST_EXISTS)) {
-            gchar *view_cmd = g_strdup_printf("evince --presentation\"%s\" &", pdf_file);
+            gchar *view_cmd = g_strdup_printf("evince --presentation \"%s\" &", pdf_file); 
             system(view_cmd);
             g_free(view_cmd);
         }
@@ -977,12 +943,6 @@ G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
                 }
             }
         }
-
-        switch(selected_rb) {
-            case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data); break;
-            case 3: max_value = knapsack_unbounded(n, capacity, (KnapsackItem *)items->data); break;
-        }
-
         generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
 
         for (int i = 0; i <= n; i++) {
