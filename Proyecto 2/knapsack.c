@@ -18,6 +18,7 @@ Viviana Vargas -
 #include <stdlib.h>
 #include <errno.h>
 #include <glib/gstdio.h>
+#include <limits.h>
 
 //--- GTK Variables ----
 //Window 1
@@ -70,6 +71,11 @@ typedef struct {
     int    quantity;
     gboolean unbounded; 
 } KnapsackItem;
+
+typedef struct {
+    int value;
+    int counts[MAX_OBJ];
+} BoundedCell;
 
 void set_css(GtkCssProvider *cssProvider, GtkWidget *widget);
 gchar* object_name_setter(int index);
@@ -207,6 +213,47 @@ int knapsack_bounded(int n, int W, KnapsackItem objs[]) {
     return dp[W];
 }
 
+int knapsack_bounded_detailed(int n, int W, KnapsackItem objs[], BoundedCell ***table_ptr) {
+    BoundedCell **table = g_new(BoundedCell *, n);
+    for (int i = 0; i < n; i++) {
+        table[i] = g_new(BoundedCell, W + 1);
+        for (int w = 0; w <= W; w++) {
+            table[i][w].value = 0;
+            memset(table[i][w].counts, 0, sizeof(table[i][w].counts));
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        int maxUnits = objs[i].unbounded ? INT_MAX : objs[i].quantity;
+        for (int w = 0; w <= W; w++) {
+            if (i > 0) {
+                table[i][w].value = table[i-1][w].value;
+                memcpy(table[i][w].counts, table[i-1][w].counts, sizeof(table[i][w].counts));
+            }
+            for (int k = 1; k <= maxUnits; k++) {
+                int cost_k = k * (int)objs[i].cost;
+                if (cost_k > w) break; 
+                int remaining = w - cost_k;
+                int new_value = k * (int)objs[i].value;
+                if (i > 0 && remaining >= 0) {
+                    new_value += table[i-1][remaining].value;
+                }
+                if (new_value > table[i][w].value) {
+                    table[i][w].value = new_value;
+                    if (i > 0 && remaining >= 0) {
+                        memcpy(table[i][w].counts, table[i-1][remaining].counts, sizeof(table[i][w].counts));
+                    } else {
+                        memset(table[i][w].counts, 0, sizeof(table[i][w].counts));
+                    }
+                    table[i][w].counts[i] = k;
+                }
+            }
+        }
+    }
+    
+    *table_ptr = table; 
+    return table[n-1][W].value;
+}
+
 /* Unbounded Knapsack */
 int knapsack_unbounded(int n, int W, KnapsackItem objs[]) {
     int dp[MAX_CAP + 1];
@@ -233,7 +280,15 @@ void compile_latex_file(const gchar *tex_file) {
     int result = system(cmd);
     
     if (result == 0) {
-        gchar *pdf_file = g_strdup_printf("%s/%.*s.pdf", dir, (int)(strlen(base) - 4), base);
+        gchar *pdf_file;
+        if (g_str_has_suffix(base, ".tex")) {
+            gchar *base_name = g_strndup(base, strlen(base) - 4);
+            pdf_file = g_strdup_printf("%s/%s.pdf", dir, base_name);
+            g_free(base_name);
+        } else {
+            pdf_file = g_strdup_printf("%s/%s.pdf", dir, base);
+        }
+        
         if (g_file_test(pdf_file, G_FILE_TEST_EXISTS)) {
             gchar *view_cmd = g_strdup_printf("evince \"%s\" &", pdf_file);
             system(view_cmd);
@@ -476,15 +531,19 @@ GArray* read_knapsack_items(int n_items) {
 
 void generate_latex_report(int capacity, GArray *items, int max_value, int problem_type, int **dp, int n) {
     g_mkdir_with_parents("ReportsKnapsack", 0755);
-    gchar *filename = g_strdup_printf("ReportsKnapsack/knapsack_report_%ld.tex", (long)time(NULL));
+    const gchar *custom_name = gtk_entry_get_text(GTK_ENTRY(fileName));
+    gchar *filename;
+    if (custom_name && strlen(custom_name) > 0) {
+        filename = g_strdup_printf("ReportsKnapsack/%s.tex", custom_name);
+    } else {
+        filename = g_strdup_printf("ReportsKnapsack/knapsack_report_%ld.tex", (long)time(NULL));
+    }
     FILE *f = fopen(filename, "w");
-    
     if (!f) {
         g_printerr("Error creating LaTeX file\n");
         g_free(filename);
         return;
     }
-
     fprintf(f, "\\documentclass{article}\n");
     fprintf(f, "\\usepackage[utf8]{inputenc}\n");
     fprintf(f, "\\usepackage{amsmath}\n");
@@ -496,7 +555,7 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     fprintf(f, "\\geometry{margin=1in}\n");
     fprintf(f, "\\definecolor{verde}{RGB}{0, 128, 0}\n");
     fprintf(f, "\\definecolor{rojo}{RGB}{255, 0, 0}\n");
-    fprintf(f, "\\title{Proyecto 1: Rutas Optimas (Algoritmo de Floyd)}\n");
+    fprintf(f, "\\title{Proyecto 2: El Problema de la Mochila}\n");
     fprintf(f, "\\author{Emily Sanchez \\\\ Viviana Vargas \\\\[1cm] Curso: Investigación de Operaciones \\\\ II Semestre 2025}\n");
     fprintf(f, "\\date{\\today}\n\n");
     fprintf(f, "\\begin{document}\n");
@@ -504,7 +563,6 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     fprintf(f, "\\thispagestyle{empty}\n");
     fprintf(f, "\\newpage\n");
     fprintf(f, "\\setcounter{page}{1}\n\n");
-
     fprintf(f, "\\section{Problema de la Mochila (Knapsack Problem)}\n\n");
     fprintf(f, "El \\textbf{problema de la mochila} es un clasico de la "
             "\\textit{optimizacion combinatoria}. Se dispone de una "
@@ -512,19 +570,16 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
             "y un conjunto de $n$ objetos. Cada objeto $i$ tiene un "
             "\\textbf{peso} $w_i$ y un \\textbf{valor} $v_i$. "
             "El objetivo es seleccionar los objetos de manera que:\n");
-
     fprintf(f, "\\begin{itemize}\n");
     fprintf(f, "  \\item La suma total de los pesos no exceda la capacidad $W$.\n");
     fprintf(f, "  \\item Se maximice el valor total de los objetos elegidos.\n");
     fprintf(f, "\\end{itemize}\n\n");
-
     fprintf(f, "\\subsection{Variantes principales}\n");
     fprintf(f, "\\begin{description}\n");
     fprintf(f, "  \\item[0/1 Knapsack] Cada objeto puede elegirse una sola vez o no elegirse: decision binaria.\n");
     fprintf(f, "  \\item[Bounded Knapsack] Cada objeto puede seleccionarse un numero limitado de veces.\n");
     fprintf(f, "  \\item[Unbounded Knapsack] Se permite una cantidad ilimitada de cada objeto.\n");
     fprintf(f, "\\end{description}\n\n");
-
     fprintf(f, "\\subsection{Solucion}\n");
     fprintf(f, "\\paragraph{0/1 Knapsack} Se resuelve comunmente con "
             "\\textbf{programacion dinamica}. Sea $dp[i][w]$ el valor "
@@ -536,15 +591,12 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
             "\\max ( dp[i-1][w], v_i + dp[i-1][w - w_i] ) & \\text{si } w_i \\le w.\n"
             "\\end{cases}\n"
             "\\]\n\n");
-
     fprintf(f, "\\paragraph{Unbounded Knapsack} Similar al 0/1 pero permitiendo repeticiones:\n");
     fprintf(f, "\\[\n"
             "dp[w] = \\max ( dp[w], v_i + dp[w - w_i] ).\n"
             "\\]\n\n");
-
     fprintf(f, "\\thispagestyle{empty}\n");
     fprintf(f, "\\newpage\n");
-
     fprintf(f, "\\textbf{Tipo de problema:} ");
     switch(problem_type) {
         case 1: fprintf(f, "0/1 Knapsack\\\\\n"); break;
@@ -553,7 +605,6 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     }
     fprintf(f, "\\textbf{Capacidad máxima:} %d\\\\\n", capacity);
     fprintf(f, "\\textbf{Número de objetos:} %d\\\\\n\n", items->len);
-
     fprintf(f, "\\section*{Datos del Problema}\n");
     fprintf(f, "\\begin{tabular}{|c|c|c|c|}\n");
     fprintf(f, "\\hline\n");
@@ -571,45 +622,34 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     }
     fprintf(f, "\\hline\n");
     fprintf(f, "\\end{tabular}\n\n");
-
     fprintf(f, "\\section*{Tabla de Programación Dinámica}\n");
     fprintf(f, "\\begin{center}\n");
     fprintf(f, "\\scriptsize\n");
     fprintf(f, "\\begin{tabular}{|c|");
-    for (int i = 0; i <= n; i++) {
+    for (int i = 1; i <= n; i++) {   
         fprintf(f, "c|");
     }
     fprintf(f, "}\n\\hline\n");
-    
-    // Encabezado de columnas (objetos)
     fprintf(f, "Capacidad/Objetos ");
-    for (int i = 0; i <= n; i++) {
-        if (i == 0) {
-            fprintf(f, "& Ninguno ");
-        } else {
-            KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
-            fprintf(f, "& %s ", it->name);
-        }
+    for (int i = 1; i <= n; i++) {  
+        KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
+        fprintf(f, "& %s ", it->name);
     }
     fprintf(f, "\\\\ \\hline\n");
-    
-    // Filas de la tabla (capacidades)
     for (int w = 0; w <= capacity; w++) {
         fprintf(f, "%d ", w);
         
-        for (int i = 0; i <= n; i++) {
-            // Determinar el color basado en si se seleccionó el objeto
+        for (int i = 1; i <= n; i++) {   
             gboolean selected = FALSE;
-            if (i > 0 && w >= (int)g_array_index(items, KnapsackItem, i-1).cost) {
+            if (w >= (int)g_array_index(items, KnapsackItem, i-1).cost) {
                 int without = dp[i-1][w];
-                int with = dp[i-1][w - (int)g_array_index(items, KnapsackItem, i-1).cost] + 
-                          (int)g_array_index(items, KnapsackItem, i-1).value;
+                int with = dp[i-1][w - (int)g_array_index(items, KnapsackItem, i-1).cost] +
+                        (int)g_array_index(items, KnapsackItem, i-1).value;
                 
                 if (with > without) {
                     selected = TRUE;
                 }
             }
-            
             if (selected) {
                 fprintf(f, "& \\cellcolor{verde}\\textcolor{white}{%d} ", dp[i][w]);
             } else {
@@ -618,15 +658,11 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
         }
         fprintf(f, "\\\\ \\hline\n");
     }
-    
     fprintf(f, "\\end{tabular}\n");
     fprintf(f, "\\end{center}\n");
     fprintf(f, "\\normalsize\n\n");
-
     fprintf(f, "\\section*{Solución Óptima}\n");
     fprintf(f, "\\textbf{Valor máximo obtenido:} %d\\\\\n", max_value);
-    
-    // Encontrar los objetos seleccionados
     fprintf(f, "\\textbf{Objetos seleccionados:} ");
     int w = capacity;
     gboolean first = TRUE;
@@ -645,12 +681,174 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
         fprintf(f, "Ninguno");
     }
     fprintf(f, "\\\\\n");
-    
     fprintf(f, "\\textbf{Capacidad utilizada:} %d\\\\\n", capacity - w);
-
     fprintf(f, "\\end{document}\n");
     fclose(f);
+    compile_latex_file(filename);
+    g_free(filename);
+}
 
+void generate_bounded_latex_report(int capacity, GArray *items, int max_value, void *bounded_table_ptr, int n, int problem_type) {
+    typedef struct {
+        int value;
+        int counts[MAX_OBJ];
+    } BoundedCell;
+    
+    BoundedCell **table = (BoundedCell **)bounded_table_ptr;
+
+    g_mkdir_with_parents("ReportsKnapsack", 0755);
+    
+    const gchar *custom_name = gtk_entry_get_text(GTK_ENTRY(fileName));
+    gchar *filename;
+    
+    if (custom_name && strlen(custom_name) > 0) {
+        filename = g_strdup_printf("ReportsKnapsack/%s.tex", custom_name);
+    } else {
+        filename = g_strdup_printf("ReportsKnapsack/knapsack_report_%ld.tex", (long)time(NULL));
+    }
+    
+    FILE *f = fopen(filename, "w");
+    
+    if (!f) {
+        g_printerr("Error creating LaTeX file\n");
+        g_free(filename);
+        return;
+    }
+    fprintf(f, "\\documentclass{article}\n");
+    fprintf(f, "\\usepackage[utf8]{inputenc}\n");
+    fprintf(f, "\\usepackage{amsmath}\n");
+    fprintf(f, "\\usepackage{xcolor}\n");
+    fprintf(f, "\\usepackage{colortbl}\n");
+    fprintf(f, "\\usepackage{geometry}\n");
+    fprintf(f, "\\usepackage{multirow}\n");
+    fprintf(f, "\\usepackage{graphicx}\n");
+    fprintf(f, "\\geometry{margin=1in}\n");
+    fprintf(f, "\\definecolor{verde}{RGB}{0, 128, 0}\n");
+    fprintf(f, "\\definecolor{rojo}{RGB}{255, 0, 0}\n");
+    fprintf(f, "\\title{Proyecto 2: El Problema de la Mochila}\n");
+    fprintf(f, "\\author{Emily Sanchez \\\\ Viviana Vargas \\\\[1cm] Curso: Investigación de Operaciones \\\\ II Semestre 2025}\n");
+    fprintf(f, "\\date{\\today}\n\n");
+    fprintf(f, "\\begin{document}\n");
+    fprintf(f, "\\maketitle\n\n");
+    fprintf(f, "\\thispagestyle{empty}\n");
+    fprintf(f, "\\newpage\n");
+    fprintf(f, "\\setcounter{page}{1}\n\n");
+    fprintf(f, "\\section{Problema de la Mochila (Knapsack Problem)}\n\n");
+    fprintf(f, "El \\textbf{problema de la mochila} es un clasico de la "
+            "\\textit{optimizacion combinatoria}. Se dispone de una "
+            "\\textbf{mochila} con una \\textbf{capacidad maxima} $W$ "
+            "y un conjunto de $n$ objetos. Cada objeto $i$ tiene un "
+            "\\textbf{peso} $w_i$ y un \\textbf{valor} $v_i$. "
+            "El objetivo es seleccionar los objetos de manera que:\n");
+    fprintf(f, "\\begin{itemize}\n");
+    fprintf(f, "  \\item La suma total de los pesos no exceda la capacidad $W$.\n");
+    fprintf(f, "  \\item Se maximice el valor total de los objetos elegidos.\n");
+    fprintf(f, "\\end{itemize}\n\n");
+    fprintf(f, "\\subsection{Variantes principales}\n");
+    fprintf(f, "\\begin{description}\n");
+    fprintf(f, "  \\item[0/1 Knapsack] Cada objeto puede elegirse una sola vez o no elegirse: decision binaria.\n");
+    fprintf(f, "  \\item[Bounded Knapsack] Cada objeto puede seleccionarse un numero limitado de veces.\n");
+    fprintf(f, "  \\item[Unbounded Knapsack] Se permite una cantidad ilimitada de cada objeto.\n");
+    fprintf(f, "\\end{description}\n\n");
+    fprintf(f, "\\subsection{Solucion}\n");
+    fprintf(f, "\\paragraph{0/1 Knapsack} Se resuelve comunmente con "
+            "\\textbf{programacion dinamica}. Sea $dp[i][w]$ el valor "
+            "maximo al considerar los primeros $i$ objetos y capacidad $w$.\n");
+    fprintf(f, "\\[\n"
+            "dp[i][w] =\n"
+            "\\begin{cases}\n"
+            "dp[i-1][w] & \\text{si } w_i > w, \\\\\n"
+            "\\max ( dp[i-1][w], v_i + dp[i-1][w - w_i] ) & \\text{si } w_i \\le w.\n"
+            "\\end{cases}\n"
+            "\\]\n\n");
+    fprintf(f, "\\paragraph{Unbounded Knapsack} Similar al 0/1 pero permitiendo repeticiones:\n");
+    fprintf(f, "\\[\n"
+            "dp[w] = \\max ( dp[w], v_i + dp[w - w_i] ).\n"
+            "\\]\n\n");
+    fprintf(f, "\\thispagestyle{empty}\n");
+    fprintf(f, "\\newpage\n");
+    fprintf(f, "\\textbf{Tipo de problema:} ");
+    switch(problem_type) {
+        case 1: fprintf(f, "0/1 Knapsack\\\\\n"); break;
+        case 2: fprintf(f, "Bounded Knapsack\\\\\n"); break;
+        case 3: fprintf(f, "Unbounded Knapsack\\\\\n"); break;
+    }
+    fprintf(f, "\\textbf{Capacidad máxima:} %d\\\\\n", capacity);
+    fprintf(f, "\\textbf{Número de objetos:} %d\\\\\n\n", items->len);
+    fprintf(f, "\\section*{Datos del Problema}\n");
+    fprintf(f, "\\begin{tabular}{|c|c|c|c|}\n");
+    fprintf(f, "\\hline\n");
+    fprintf(f, "Objeto & Costo & Valor & Cantidad \\\\\n");
+    fprintf(f, "\\hline\n");
+    for (guint i = 0; i < items->len; i++) {
+        KnapsackItem *it = &g_array_index(items, KnapsackItem, i);
+        fprintf(f, "%s & %.2f & %.2f & ", it->name, it->cost, it->value);
+        if (it->unbounded) {
+            fprintf(f, "$\\infty$ \\\\\n");
+        } else {
+            fprintf(f, "%d \\\\\n", it->quantity);
+        }
+    }
+    fprintf(f, "\\hline\n");
+    fprintf(f, "\\end{tabular}\n\n");
+    fprintf(f, "\\section*{Tabla de Programación Dinámica Detallada}\n");
+    fprintf(f, "\\begin{center}\n");
+    fprintf(f, "\\scriptsize\n");
+    fprintf(f, "\\begin{tabular}{|c|");
+    for (int i = 0; i < n; i++) {
+        fprintf(f, "c|");
+    }
+    fprintf(f, "}\n\\hline\n");
+    fprintf(f, "Capacidad ");
+    for (int i = 0; i < n; i++) {
+        KnapsackItem *it = &g_array_index(items, KnapsackItem, i);
+        fprintf(f, "& %s ", it->name);
+    }
+    fprintf(f, "\\\\ \\hline\n");
+    for (int w = 0; w <= capacity; w++) {
+        fprintf(f, "%d ", w);
+        for (int i = 0; i < n; i++) {
+            int count = table[i][w].counts[i];
+            int current_value = table[i][w].value;
+            if (count > 0) {
+                fprintf(f, "& \\cellcolor{verde}\\textcolor{white}{%d(%d)} ",
+                        current_value, count);
+            } else {
+                fprintf(f, "& \\cellcolor{rojo}\\textcolor{white}{%d} ",
+                        current_value);
+            }
+        }
+        fprintf(f, "\\\\ \\hline\n");
+    }
+    fprintf(f, "\\end{tabular}\n");
+    fprintf(f, "\\end{center}\n");
+    fprintf(f, "\\normalsize\n\n");
+    fprintf(f, "\\section*{Solución Óptima}\n");
+    fprintf(f, "\\textbf{Valor máximo obtenido:} %d\\\\\n", max_value);
+    fprintf(f, "\\textbf{Objetos seleccionados:} ");
+    gboolean first = TRUE;
+    int current_w = capacity;
+    
+    for (int i = n-1; i >= 0; i--) {
+        int count = table[i][current_w].counts[i];
+        if (count > 0) {
+            KnapsackItem *it = &g_array_index(items, KnapsackItem, i);
+            if (!first) {
+                fprintf(f, ", ");
+            }
+            fprintf(f, "%s:%d", it->name, count);
+            current_w -= count * (int)it->cost;
+            first = FALSE;
+        }
+    }
+    
+    if (first) {
+        fprintf(f, "Ninguno");
+    }
+    fprintf(f, "\\\\\n");
+    fprintf(f, "\\textbf{Capacidad utilizada:} %d\\\\\n", capacity - current_w);
+    fprintf(f, "\\end{document}\n");
+    fclose(f);
     compile_latex_file(filename);
     g_free(filename);
 }
@@ -745,38 +943,54 @@ G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
         return;
     }
 
-    // Crear tabla de programación dinámica
-    int **dp = g_new(int *, n + 1);
-    for (int i = 0; i <= n; i++) {
-        dp[i] = g_new(int, capacity + 1);
-        for (int w = 0; w <= capacity; w++) {
-            if (i == 0 || w == 0) {
-                dp[i][w] = 0;
-            } else if ((int)g_array_index(items, KnapsackItem, i-1).cost <= w) {
-                KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
-                int without = dp[i-1][w];
-                int with = (int)it->value + dp[i-1][w - (int)it->cost];
-                dp[i][w] = (with > without) ? with : without;
-            } else {
-                dp[i][w] = dp[i-1][w];
+    int max_value = 0;
+        if (selected_rb == 2) {
+        BoundedCell **bounded_table;
+        max_value = knapsack_bounded_detailed(n, capacity, (KnapsackItem *)items->data, &bounded_table);
+        generate_bounded_latex_report(capacity, items, max_value, (void *)bounded_table, n, selected_rb);
+        for (int i = 0; i < n; i++) {
+            g_free(bounded_table[i]);
+        }
+        g_free(bounded_table);
+    } else if (selected_rb == 3) {
+        BoundedCell **bounded_table;
+        max_value = knapsack_bounded_detailed(n, capacity, (KnapsackItem *)items->data, &bounded_table);
+        generate_bounded_latex_report(capacity, items, max_value, (void *)bounded_table, n, selected_rb);
+        for (int i = 0; i < n; i++) {
+            g_free(bounded_table[i]);
+        }
+        g_free(bounded_table);
+    } else {
+        int **dp = g_new(int *, n + 1);
+        for (int i = 0; i <= n; i++) {
+            dp[i] = g_new(int, capacity + 1);
+            for (int w = 0; w <= capacity; w++) {
+                if (i == 0 || w == 0) {
+                    dp[i][w] = 0;
+                } else if ((int)g_array_index(items, KnapsackItem, i-1).cost <= w) {
+                    KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
+                    int without = dp[i-1][w];
+                    int with = (int)it->value + dp[i-1][w - (int)it->cost];
+                    dp[i][w] = (with > without) ? with : without;
+                } else {
+                    dp[i][w] = dp[i-1][w];
+                }
             }
         }
-    }
 
-    int max_value = 0;
-    switch(selected_rb) {
-        case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data); break;
-        case 2: max_value = knapsack_bounded(n, capacity, (KnapsackItem *)items->data); break;
-        case 3: max_value = knapsack_unbounded(n, capacity, (KnapsackItem *)items->data); break;
-    }
+        switch(selected_rb) {
+            case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data); break;
+            case 3: max_value = knapsack_unbounded(n, capacity, (KnapsackItem *)items->data); break;
+        }
 
-    generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
+        generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
+
+        for (int i = 0; i <= n; i++) {
+            g_free(dp[i]);
+        }
+        g_free(dp);
+    }
     
-    // Liberar memoria
-    for (int i = 0; i <= n; i++) {
-        g_free(dp[i]);
-    }
-    g_free(dp);
     g_array_free(items, TRUE);
 }
 

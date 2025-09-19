@@ -9,7 +9,7 @@
 \geometry{margin=1in}
 \definecolor{verde}{RGB}{0, 128, 0}
 \definecolor{rojo}{RGB}{255, 0, 0}
-\title{Proyecto 1: Rutas Optimas (Algoritmo de Floyd)}
+\title{Proyecto 2: El Problema de la Mochila}
 \author{Emily Sanchez \\ Viviana Vargas \\[1cm] Curso: Investigación de Operaciones \\ II Semestre 2025}
 \date{\today}
 
@@ -52,8 +52,8 @@ dp[w] = \max ( dp[w], v_i + dp[w - w_i] ).
 
 \thispagestyle{empty}
 \newpage
-\textbf{Tipo de problema:} 0/1 Knapsack\\
-\textbf{Capacidad máxima:} 9\\
+\textbf{Tipo de problema:} Bounded Knapsack\\
+\textbf{Capacidad máxima:} 10\\
 \textbf{Número de objetos:} 3\\
 
 \section*{Datos del Problema}
@@ -61,34 +61,35 @@ dp[w] = \max ( dp[w], v_i + dp[w - w_i] ).
 \hline
 Objeto & Costo & Valor & Cantidad \\
 \hline
-A & 2,00 & 5,00 & 1 \\
-B & 3,00 & 7,00 & 1 \\
-C & 4,00 & 10,00 & 1 \\
+A & 4,00 & 11,00 & 4 \\
+B & 3,00 & 7,00 & 4 \\
+C & 5,00 & 12,00 & 4 \\
 \hline
 \end{tabular}
 
-\section*{Tabla de Programación Dinámica}
+\section*{Tabla de Programación Dinámica Detallada}
 \begin{center}
 \scriptsize
 \begin{tabular}{|c|c|c|c|c|}
 \hline
-Capacidad/Objetos & Ninguno & A & B & C \\ \hline
-0 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} \\ \hline
-1 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} \\ \hline
-2 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{rojo}\textcolor{white}{5} & \cellcolor{rojo}\textcolor{white}{5} \\ \hline
-3 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{7} & \cellcolor{rojo}\textcolor{white}{7} \\ \hline
-4 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{7} & \cellcolor{verde}\textcolor{white}{10} \\ \hline
-5 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{12} & \cellcolor{rojo}\textcolor{white}{12} \\ \hline
-6 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{12} & \cellcolor{verde}\textcolor{white}{15} \\ \hline
-7 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{12} & \cellcolor{verde}\textcolor{white}{17} \\ \hline
-8 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{12} & \cellcolor{verde}\textcolor{white}{17} \\ \hline
-9 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{5} & \cellcolor{verde}\textcolor{white}{12} & \cellcolor{verde}\textcolor{white}{22} \\ \hline
+Capacidad & Inicial & A & B & C \\ \hline
+0 & 0 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} \\ \hline
+1 & 0 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} \\ \hline
+2 & 0 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{rojo}\textcolor{white}{0} \\ \hline
+3 & 0 & \cellcolor{rojo}\textcolor{white}{0} & \cellcolor{verde}\textcolor{white}{7(1)} & \cellcolor{rojo}\textcolor{white}{7} \\ \hline
+4 & 11 & \cellcolor{verde}\textcolor{white}{11(1)} & \cellcolor{rojo}\textcolor{white}{11} & \cellcolor{rojo}\textcolor{white}{11} \\ \hline
+5 & 11 & \cellcolor{verde}\textcolor{white}{11(1)} & \cellcolor{rojo}\textcolor{white}{11} & \cellcolor{verde}\textcolor{white}{12(1)} \\ \hline
+6 & 11 & \cellcolor{verde}\textcolor{white}{11(1)} & \cellcolor{verde}\textcolor{white}{14(2)} & \cellcolor{rojo}\textcolor{white}{14} \\ \hline
+7 & 11 & \cellcolor{verde}\textcolor{white}{11(1)} & \cellcolor{verde}\textcolor{white}{18(1)} & \cellcolor{rojo}\textcolor{white}{18} \\ \hline
+8 & 22 & \cellcolor{verde}\textcolor{white}{22(2)} & \cellcolor{rojo}\textcolor{white}{22} & \cellcolor{rojo}\textcolor{white}{22} \\ \hline
+9 & 22 & \cellcolor{verde}\textcolor{white}{22(2)} & \cellcolor{rojo}\textcolor{white}{22} & \cellcolor{verde}\textcolor{white}{23(1)} \\ \hline
+10 & 22 & \cellcolor{verde}\textcolor{white}{22(2)} & \cellcolor{verde}\textcolor{white}{25(2)} & \cellcolor{rojo}\textcolor{white}{25} \\ \hline
 \end{tabular}
 \end{center}
 \normalsize
 
 \section*{Solución Óptima}
-\textbf{Valor máximo obtenido:} 22\\
-\textbf{Objetos seleccionados:} C, B, A\\
-\textbf{Capacidad utilizada:} 9\\
+\textbf{Valor máximo obtenido:} 25\\
+\textbf{Objetos seleccionados:} B:2, A:1\\
+\textbf{Capacidad utilizada:} 10\\
 \end{document}
