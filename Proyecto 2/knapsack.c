@@ -290,7 +290,7 @@ void compile_latex_file(const gchar *tex_file) {
         }
         
         if (g_file_test(pdf_file, G_FILE_TEST_EXISTS)) {
-            gchar *view_cmd = g_strdup_printf("evince \"%s\" &", pdf_file);
+            gchar *view_cmd = g_strdup_printf("evince --presentation\"%s\" &", pdf_file);
             system(view_cmd);
             g_free(view_cmd);
         }
