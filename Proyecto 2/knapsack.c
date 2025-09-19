@@ -18,6 +18,7 @@ Viviana Vargas -
 #include <stdlib.h>
 #include <errno.h>
 #include <glib/gstdio.h>
+#include <limits.h>
 
 //--- GTK Variables ----
 //Window 1
@@ -82,8 +83,6 @@ void set_css(GtkCssProvider *cssProvider, GtkWidget *widget);
 gchar* object_name_setter(int index);
 void validate_entry(GtkEditable *editable, const gchar *text, gint length, gint *position, gpointer user_data);
 int knapsack_01(int n, int W, KnapsackItem objs[]);
-int knapsack_bounded(int n, int W, KnapsackItem objs[]);
-int knapsack_unbounded(int n, int W, KnapsackItem objs[]);
 void compile_latex_file(const gchar *tex_file);
 void on_select_latex_file(GtkWidget *widget, gpointer data);
 void build_table(int items);
@@ -273,7 +272,7 @@ int knapsack_01(int n, int W, KnapsackItem objs[]) {
 }
 
 /* Bounded Knapsack */
-int knapsack_bounded(int n, int W, KnapsackItem objs[], BoundedCell ***table_ptr) {
+int knapsack_bounded_detailed(int n, int W, KnapsackItem objs[], BoundedCell ***table_ptr) {
     BoundedCell **table = g_new(BoundedCell *, n);
     for (int i = 0; i < n; i++) {
         table[i] = g_new(BoundedCell, W + 1);
@@ -365,20 +364,12 @@ void compile_latex_file(const gchar *tex_file) {
     g_free(base);
 }
 
-
 void on_select_latex_file(GtkWidget *widget, gpointer data) {
     GtkWidget *dialog;
     GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
     gint res;
 
-    dialog = gtk_file_chooser_dialog_new("Seleccionar archivo LaTeX",
-                                        GTK_WINDOW(window1),
-                                        action,
-                                        "Cancelar",
-                                        GTK_RESPONSE_CANCEL,
-                                        "Abrir",
-                                        GTK_RESPONSE_ACCEPT,
-                                        NULL);
+    dialog = gtk_file_chooser_dialog_new("Seleccionar archivo LaTeX",GTK_WINDOW(window1),action,"Cancelar",GTK_RESPONSE_CANCEL,"Abrir",GTK_RESPONSE_ACCEPT,NULL);
 
     GtkFileFilter *filter = gtk_file_filter_new();
     gtk_file_filter_set_name(filter, "Archivos LaTeX (*.tex)");
@@ -398,18 +389,7 @@ void on_select_latex_file(GtkWidget *widget, gpointer data) {
         if (last_selected_tex) g_free(last_selected_tex);
         last_selected_tex = gtk_file_chooser_get_filename(chooser);
         
-        GtkWidget *choice_dialog = gtk_dialog_new_with_buttons(
-            "¿Qué deseas hacer?",
-            GTK_WINDOW(window1),
-            GTK_DIALOG_MODAL,
-            "Editar",
-            GTK_RESPONSE_YES,
-            "Compilar",
-            GTK_RESPONSE_NO,
-            "Ambos",
-            GTK_RESPONSE_APPLY,
-            NULL
-        );
+        GtkWidget *choice_dialog = gtk_dialog_new_with_buttons("¿Qué deseas hacer?",GTK_WINDOW(window1),GTK_DIALOG_MODAL,"Editar",GTK_RESPONSE_YES,"Compilar",GTK_RESPONSE_NO,"Ambos",GTK_RESPONSE_APPLY,NULL);
         
         GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(choice_dialog));
         GtkWidget *label = gtk_label_new("Selecciona una opción para el archivo LaTeX:");
@@ -430,16 +410,7 @@ void on_select_latex_file(GtkWidget *widget, gpointer data) {
             system(edit_cmd);
             g_free(edit_cmd);
             
-            GtkWidget *compile_dialog = gtk_dialog_new_with_buttons(
-                "Recompilar PDF",
-                GTK_WINDOW(window1),
-                GTK_DIALOG_MODAL,
-                "Compilar ahora",
-                GTK_RESPONSE_YES,
-                "Después",
-                GTK_RESPONSE_NO,
-                NULL
-            );
+            GtkWidget *compile_dialog = gtk_dialog_new_with_buttons("Recompilar PDF",GTK_WINDOW(window1),GTK_DIALOG_MODAL,"Compilar ahora",GTK_RESPONSE_YES,"Después",GTK_RESPONSE_NO,NULL);
             
             GtkWidget *compile_content = gtk_dialog_get_content_area(GTK_DIALOG(compile_dialog));
             GtkWidget *compile_label = gtk_label_new("¿Deseas compilar el PDF ahora?");
@@ -531,7 +502,15 @@ void generate_bounded_latex_report(int capacity, GArray *items, int max_value, v
             "\\max ( dp[i-1][w], v_i + dp[i-1][w - w_i] ) & \\text{si } w_i \\le w.\n"
             "\\end{cases}\n"
             "\\]\n\n");
-    fprintf(f, "\\paragraph{Unbounded Knapsack} Similar al 0/1 pero permitiendo repeticiones:\n");
+    
+    fprintf(f, "\\paragraph{Bounded Knapsack} Similar al 0/1 pero puede tener uno o más cantidades por objeto. Es limitado, por lo que no puede ser infinito.\n");
+    fprintf(f, "\\[\n"
+           "dp[i][w] = \n"
+           "\\max_{0 \\leq k \\leq c_i,\\; k\\,w_i \\leq w} "
+           "\\left( dp[i-1][w - k w_i] + k v_i \\right).\n"
+           "\\]\n\n");
+    
+    fprintf(f, "\\paragraph{Unbounded Knapsack} Similar al bounded pero permitiendo repeticiones sin limite de cantidades (infinito).\n");
     fprintf(f, "\\[\n"
             "dp[w] = \\max ( dp[w], v_i + dp[w - w_i] ).\n"
             "\\]\n\n");
@@ -649,7 +628,9 @@ void build_table(int items) {
         entry_quantity = NULL; 
     }
 
-    if (items < 1) items = 1;
+    if (items < 1) {
+        items = 1;
+    }
 
     entry_costs = g_ptr_array_sized_new(items);
     entry_values = g_ptr_array_sized_new(items);
@@ -719,57 +700,115 @@ void build_table(int items) {
 }
 
 GArray* read_knapsack_items(int n_items) {
-    if (!entry_costs || !entry_values || !entry_quantity) {
-        return NULL;
-    }
-    if (n_items <= 0) {
-        return NULL;
-    }
+    if (!entry_costs || !entry_values || !entry_quantity) return NULL;
+    if (n_items <= 0) return NULL;
 
     GArray *items = g_array_new(FALSE, FALSE, sizeof(KnapsackItem));
+    gboolean has_errors = FALSE;
+    GString *err = g_string_new(NULL); 
 
     for (int i = 0; i < n_items; i++) {
         KnapsackItem obj;
         memset(&obj, 0, sizeof(obj));
         obj.unbounded = FALSE;
-        obj.quantity = 0;
+        obj.quantity  = 0;
 
         gchar *name = object_name_setter(i + 1);
         g_strlcpy(obj.name, name, sizeof(obj.name));
 
-        const gchar *cost_col_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_costs, i)));
-        gchar *cost_col_real = set_real(cost_col_entry);
-        obj.cost = g_ascii_strtod(cost_col_real, NULL);
-        if (obj.cost < 0) obj.cost = 0;
-        g_free(cost_col_real);
-
-        const gchar *val_col_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_values, i)));
-        gchar *val_col_real = set_real(val_col_entry);
-        obj.value = g_ascii_strtod(val_col_real, NULL);
-        if (obj.value < 0) obj.value = 0;
-        g_free(val_col_real);
-
-        const gchar *qty_col_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_quantity, i)));
-        gchar *qty_col = trimdup(qty_col_entry);
-
-        if (is_infinite(qty_col)) {
-            obj.unbounded = TRUE;
-            obj.quantity = -1;
+        // Cost
+        const gchar *cost_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_costs, i)));
+        gchar *cost_trim = trimdup(cost_entry);
+        if (cost_trim == NULL || *cost_trim == '\0') {
+            has_errors = TRUE;
+            g_string_append_printf(err, "Row %d (%s): Cost Missing\n", i+1, obj.name);
+            obj.cost = 0;
         } else {
-            obj.quantity = (int)g_ascii_strtod(qty_col, NULL);
-            if (obj.quantity < 0) obj.quantity = 0;
+            gchar *cost_norm = set_real(cost_trim);
+            char *endptr = NULL;
+            double v = g_ascii_strtod(cost_norm, &endptr);
+            gboolean bad = (endptr == cost_norm);
+            if (bad) {
+                has_errors = TRUE;
+                g_string_append_printf(err, "Row %d (%s): Invalid Cost\n", i+1, obj.name);
+                obj.cost = 0;
+            } else {
+                obj.cost = (v < 0) ? 0 : v;
+            }
+            g_free(cost_norm);
         }
-        g_free(qty_col);
+        g_free(cost_trim);
+
+        // Value
+        const gchar *val_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_values, i)));
+        gchar *val_trim = trimdup(val_entry);
+        if (val_trim == NULL || *val_trim == '\0') {
+            has_errors = TRUE;
+            g_string_append_printf(err, "Row %d (%s): Value Missing\n", i+1, obj.name);
+            obj.value = 0;
+        } else {
+            gchar *val_norm = set_real(val_trim);
+            char *endptr = NULL;
+            double v = g_ascii_strtod(val_norm, &endptr);
+            gboolean bad = (endptr == val_norm);
+            if (bad) {
+                has_errors = TRUE;
+                g_string_append_printf(err, "Row %d (%s): Invalid Value\n", i+1, obj.name);
+                obj.value = 0;
+            } else {
+                obj.value = (v < 0) ? 0 : v;
+            }
+            g_free(val_norm);
+        }
+        g_free(val_trim);
+
+        //  Quantity
+        const gchar *qty_entry = gtk_entry_get_text(GTK_ENTRY(g_ptr_array_index(entry_quantity, i)));
+        gchar *qty_trim = trimdup(qty_entry);
+
+        if (is_infinite(qty_trim)) {
+            obj.unbounded = TRUE;
+            obj.quantity  = -1;
+        } else if (qty_trim == NULL || *qty_trim == '\0') {
+            obj.quantity = 1;
+        } else {
+            char *endptr = NULL;
+            double q = g_ascii_strtod(qty_trim, &endptr);
+            if (endptr == qty_trim) {
+                obj.quantity = 1;
+            } else {
+                if (q < 0) q = 0;
+                obj.quantity = (int)q;
+            }
+        }
+        g_free(qty_trim);
 
         g_array_append_val(items, obj);
     }
 
+    if (has_errors) {
+        GtkWidget *dialog = gtk_message_dialog_new(GTK_WINDOW(window1),GTK_DIALOG_MODAL,GTK_MESSAGE_ERROR,GTK_BUTTONS_OK,"Please enter all required data:\n%s",err->str ? err->str : "");
+        gtk_dialog_run(GTK_DIALOG(dialog));
+        gtk_widget_destroy(dialog);
+
+        g_string_free(err, TRUE);
+        g_array_free(items, TRUE);
+        return NULL;
+    }
+
+    g_string_free(err, TRUE);
     return items;
 }
 
 void generate_latex_report(int capacity, GArray *items, int max_value, int problem_type, int **dp, int n) {
     g_mkdir_with_parents("ReportsKnapsack", 0755);
-    gchar *filename = g_strdup_printf("ReportsKnapsack/knapsack_report_%ld.tex", (long)time(NULL));
+    const gchar *custom_name = gtk_entry_get_text(GTK_ENTRY(fileName));
+    gchar *filename;
+    if (custom_name && strlen(custom_name) > 0) {
+        filename = g_strdup_printf("ReportsKnapsack/%s.tex", custom_name);
+    } else {
+        filename = g_strdup_printf("ReportsKnapsack/knapsack_report_%ld.tex", (long)time(NULL));
+    }    
     FILE *f = fopen(filename, "w");
     
     if (!f) {
@@ -789,7 +828,7 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     fprintf(f, "\\geometry{margin=1in}\n");
     fprintf(f, "\\definecolor{verde}{RGB}{0, 128, 0}\n");
     fprintf(f, "\\definecolor{rojo}{RGB}{255, 0, 0}\n");
-    fprintf(f, "\\title{Proyecto 1: Rutas Optimas (Algoritmo de Floyd)}\n");
+    fprintf(f, "\\title{Proyecto 2: El Problema de la Mochila}\n");
     fprintf(f, "\\author{Emily Sanchez \\\\ Viviana Vargas \\\\[1cm] Curso: Investigación de Operaciones \\\\ II Semestre 2025}\n");
     fprintf(f, "\\date{\\today}\n\n");
     fprintf(f, "\\begin{document}\n");
@@ -829,8 +868,16 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
             "\\max ( dp[i-1][w], v_i + dp[i-1][w - w_i] ) & \\text{si } w_i \\le w.\n"
             "\\end{cases}\n"
             "\\]\n\n");
+    
+    fprintf(f, "\\paragraph{Bounded Knapsack} Similar al 0/1 pero puede tener uno o más cantidades por objeto. Es limitado, por lo que no puede ser infinito. \n");
+    fprintf(f, "\\[\n"
+           "dp[i][w] = \n"
+           "\\max_{0 \\leq k \\leq c_i,\\; k\\,w_i \\leq w} "
+           "\\left( dp[i-1][w - k w_i] + k v_i \\right).\n"
+           "\\]\n\n");
+    
 
-    fprintf(f, "\\paragraph{Unbounded Knapsack} Similar al 0/1 pero permitiendo repeticiones:\n");
+    fprintf(f, "\\paragraph{Unbounded Knapsack} Similar al bounded pero permitiendo repeticiones sin limite de cantidades (infinito).\n");
     fprintf(f, "\\[\n"
             "dp[w] = \\max ( dp[w], v_i + dp[w - w_i] ).\n"
             "\\]\n\n");
@@ -869,31 +916,25 @@ void generate_latex_report(int capacity, GArray *items, int max_value, int probl
     fprintf(f, "\\begin{center}\n");
     fprintf(f, "\\scriptsize\n");
     fprintf(f, "\\begin{tabular}{|c|");
-    for (int i = 0; i <= n; i++) {
+    for (int i = 1; i <= n; i++) {
         fprintf(f, "c|");
     }
     fprintf(f, "}\n\\hline\n");
     
-    // Encabezado de columnas (objetos)
     fprintf(f, "Capacidad/Objetos ");
-    for (int i = 0; i <= n; i++) {
-        if (i == 0) {
-            fprintf(f, "& Ninguno ");
-        } else {
-            KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
-            fprintf(f, "& %s ", it->name);
-        }
+    for (int i = 1; i <= n; i++) {  
+        KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
+        fprintf(f, "& %s ", it->name);
     }
     fprintf(f, "\\\\ \\hline\n");
     
-    // Filas de la tabla (capacidades)
     for (int w = 0; w <= capacity; w++) {
         fprintf(f, "%d ", w);
         
-        for (int i = 0; i <= n; i++) {
+        for (int i = 1; i <= n; i++) {
             // Determinar el color basado en si se seleccionó el objeto
             gboolean selected = FALSE;
-            if (i > 0 && w >= (int)g_array_index(items, KnapsackItem, i-1).cost) {
+            if (w >= (int)g_array_index(items, KnapsackItem, i-1).cost) {
                 int without = dp[i-1][w];
                 int with = dp[i-1][w - (int)g_array_index(items, KnapsackItem, i-1).cost] + 
                           (int)g_array_index(items, KnapsackItem, i-1).value;
@@ -1173,64 +1214,85 @@ G_MODULE_EXPORT void on_editLatexButton_clicked(GtkWidget *editLatex, gpointer d
 G_MODULE_EXPORT void on_createSolution_clicked(GtkWidget *btn, gpointer data) {
     int capacity = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(maxCapacity));
     int n        = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(objects));
-
+    
     GArray *items = read_knapsack_items(n);
     if (!items) {
-        GtkWidget *dialog = gtk_message_dialog_new(GTK_WINDOW(window1),GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,"Error: No se pudieron leer los items");
+        GtkWidget *dialog = gtk_message_dialog_new(
+            GTK_WINDOW(window1),
+            GTK_DIALOG_MODAL,
+            GTK_MESSAGE_ERROR,
+            GTK_BUTTONS_OK,
+            "Error: Can't read objects. Please try again."
+        );
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
         return;
     }
+    int max_value = 0;
 
-    int **dp = g_new(int*, n + 1);
-    for (int i = 0; i <= n; i++) {
-        dp[i] = g_new(int, capacity + 1);
-        for (int w = 0; w <= capacity; w++) {
-            if (i == 0 || w == 0) {
-                dp[i][w] = 0;
-            } else {
-                KnapsackItem *it = &g_array_index(items, KnapsackItem, i - 1);
-                int wt = (int)it->cost;     
-                int val = (int)it->value;   
-                if (wt <= w) {
+        if (selected_rb == 2) {
+        BoundedCell **bounded_table;
+        max_value = knapsack_bounded_detailed(n, capacity, (KnapsackItem *)items->data, &bounded_table);
+        generate_bounded_latex_report(capacity, items, max_value, (void *)bounded_table, n, selected_rb);
+        for (int i = 0; i < n; i++) {
+            g_free(bounded_table[i]);
+        }
+        g_free(bounded_table);
+    } else if (selected_rb == 3) {
+        BoundedCell **bounded_table;
+        max_value = knapsack_bounded_detailed(n, capacity, (KnapsackItem *)items->data, &bounded_table);
+        generate_bounded_latex_report(capacity, items, max_value, (void *)bounded_table, n, selected_rb);
+        for (int i = 0; i < n; i++) {
+            g_free(bounded_table[i]);
+        }
+        g_free(bounded_table);
+    } else {
+        int **dp = g_new(int *, n + 1);
+        for (int i = 0; i <= n; i++) {
+            dp[i] = g_new(int, capacity + 1);
+            for (int w = 0; w <= capacity; w++) {
+                if (i == 0 || w == 0) {
+                    dp[i][w] = 0;
+                } else if ((int)g_array_index(items, KnapsackItem, i-1).cost <= w) {
+                    KnapsackItem *it = &g_array_index(items, KnapsackItem, i-1);
                     int without = dp[i-1][w];
-                    int with    = val + dp[i-1][w - wt];
+                    int with = (int)it->value + dp[i-1][w - (int)it->cost];
                     dp[i][w] = (with > without) ? with : without;
                 } else {
                     dp[i][w] = dp[i-1][w];
                 }
             }
         }
-    }
 
-    int max_value = 0;
-    switch (selected_rb) {
-        case 1: max_value = knapsack_01(n, capacity, (KnapsackItem *)items->data);       break;
-        case 2: max_value = knapsack_bounded(n, capacity, (KnapsackItem *)items->data);   break;
-        case 3: max_value = knapsack_unbounded(n, capacity, (KnapsackItem *)items->data); break;
+        max_value = dp[n][capacity];
+
+        generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
+
+        for (int i = 0; i <= n; i++) {
+            g_free(dp[i]);
+        }
+
+        g_free(dp);
     }
 
     {
         set_path("Saved_Knapsack");
-        const gchar *raw  = gtk_entry_get_text(GTK_ENTRY(fileName)); 
-        gchar *fname      = (raw && *raw) ? set_extension(raw) : g_strdup_printf("knapsack_%ld.csv", (long)time(NULL));
-        gchar *path       = g_build_filename("Saved_Knapsack", fname, NULL);
+        const gchar *raw = gtk_entry_get_text(GTK_ENTRY(fileName));
+        gchar *fname = (raw && *raw) ? set_extension(raw)
+                                     : g_strdup_printf("knapsack_%ld.csv", (long)time(NULL));
+        gchar *path  = g_build_filename("Saved_Knapsack", fname, NULL);
 
         if (!table_to_csv(path)) {
             g_printerr("No se pudo guardar CSV en %s\n", path);
-        } 
+        }
+
         g_free(fname);
         g_free(path);
     }
 
-    generate_latex_report(capacity, items, max_value, selected_rb, dp, n);
-
-    for (int i = 0; i <= n; i++) {
-        g_free(dp[i]);
-    }
-    g_free(dp);
     g_array_free(items, TRUE);
-}
+    }
+
 
 G_MODULE_EXPORT void on_loadToGrid_clicked(GtkWidget *loadToGridBtn, gpointer data) {
     char *filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(fileLoad));
@@ -1240,7 +1302,6 @@ G_MODULE_EXPORT void on_loadToGrid_clicked(GtkWidget *loadToGridBtn, gpointer da
 
     file_selected(filename);
 
-    // Mostrar el nombre base (sin path) en el entry fileName
     gchar *basename = g_path_get_basename(filename);
     gtk_entry_set_text(GTK_ENTRY(fileName), basename);
     g_free(basename);
@@ -1326,6 +1387,8 @@ int main (int argc, char *argv[]){
     set_css(cssProvider, scrollWindow);
     set_css(cssProvider, createSolution);
     set_css(cssProvider, editLatexButton);
+    set_css(cssProvider, loadToGrid);
+    set_css(cssProvider, saveProblem);
 
     g_signal_connect(editLatexButton, "clicked", G_CALLBACK(on_editLatexButton_clicked), NULL);
     g_signal_connect(exitButton1, "clicked", G_CALLBACK(on_exitButton_clicked), NULL);
